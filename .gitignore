@@ -124,3 +124,6 @@ Session.vim
 *~
 # Auto-generated tag files
 tags
+
+logs
+.vscode

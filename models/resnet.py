@@ -42,7 +42,7 @@ data_info = {
 
 models_urls = {
     '101_voc'     : 'https://cloudstor.aarnet.edu.au/plus/s/Owmttk9bdPROwc6/download',
-    
+
     '101_imagenet': 'https://download.pytorch.org/models/resnet101-5d3b4d8f.pth',
     }
 
@@ -132,6 +132,7 @@ class RefineNet(nn.Module):
         self.layer2 = self._make_layer(block, 128, layers[1], stride=2)
         self.layer3 = self._make_layer(block, 256, layers[2], stride=2)
         self.layer4 = self._make_layer(block, 512, layers[3], stride=2)
+
         self.p_ims1d2_outl1_dimred = conv3x3(2048, 512, bias=False)
         self.adapt_stage1_b = self._make_rcu(512, 512, 2, 2)
         self.mflow_conv_g1_pool = self._make_crp(512, 512, 4)
@@ -156,14 +157,28 @@ class RefineNet(nn.Module):
         self.adapt_stage4_b2_joint_varout_dimred = conv3x3(256, 256, bias=False)
         self.mflow_conv_g4_pool = self._make_crp(256, 256, 4)
         self.mflow_conv_g4_b = self._make_rcu(256, 256, 3, 2)
+        self.mflow_conv_g4_b3_joint_varout_dimred = conv3x3(256, 64, bias=False)
 
-        self.clf_conv = nn.Conv2d(256, num_classes, kernel_size=3, stride=1,
+        self.p_ims1d2_outl5_dimred = conv3x3(64, 64, bias=False)
+        self.adapt_stage5_b = self._make_rcu(64, 64, 2, 2)
+        self.adapt_stage5_b2_joint_varout_dimred = conv3x3(64, 64, bias=False)
+        self.mflow_conv_g5_pool = self._make_crp(64, 64, 4)
+        self.mflow_conv_g5_b = self._make_rcu(64, 64, 3, 2)
+        self.mflow_conv_g5_b3_joint_varout_dimred = conv3x3(64, 64, bias=False)
+
+        self.p_ims1d2_outl6_dimred = conv3x3(3, 64, bias=False)
+        self.adapt_stage6_b = self._make_rcu(64, 64, 2, 2)
+        self.adapt_stage6_b2_joint_varout_dimred = conv3x3(64, 64, bias=False)
+        self.mflow_conv_g6_pool = self._make_crp(64, 64, 4)
+        self.mflow_conv_g6_b = self._make_rcu(64, 64, 3, 2)
+
+        self.clf_conv = nn.Conv2d(64, num_classes, kernel_size=3, stride=1,
                                   padding=1, bias=True)
 
     def _make_crp(self, in_planes, out_planes, stages):
         layers = [CRPBlock(in_planes, out_planes,stages)]
         return nn.Sequential(*layers)
-    
+
     def _make_rcu(self, in_planes, out_planes, blocks, stages):
         layers = [RCUBlock(in_planes, out_planes, blocks, stages)]
         return nn.Sequential(*layers)
@@ -186,9 +201,11 @@ class RefineNet(nn.Module):
         return nn.Sequential(*layers)
 
     def forward(self, x):
+        data = x
         x = self.conv1(x)
         x = self.bn1(x)
         x = self.relu(x)
+        l0 = x
         x = self.maxpool(x)
 
         l1 = self.layer1(x)
@@ -234,9 +251,29 @@ class RefineNet(nn.Module):
         x1 = F.relu(x1)
         x1 = self.mflow_conv_g4_pool(x1)
         x1 = self.mflow_conv_g4_b(x1)
-        x1 = self.do(x1)
+        x1 = self.mflow_conv_g4_b3_joint_varout_dimred(x1)
+        x1 = nn.Upsample(size=l0.size()[2:], mode='bilinear', align_corners=True)(x1)
 
-        out = self.clf_conv(x1)
+        x0 = self.p_ims1d2_outl5_dimred(l0)
+        x0 = self.adapt_stage5_b(x0)
+        x0 = self.adapt_stage5_b2_joint_varout_dimred(x0)
+        x0 = x0 + x1
+        x0 = F.relu(x0)
+        x0 = self.mflow_conv_g5_pool(x0)
+        x0 = self.mflow_conv_g5_b(x0)
+        x0 = self.mflow_conv_g5_b3_joint_varout_dimred(x0)
+        x0 = nn.Upsample(size=data.size()[2:], mode='bilinear', align_corners=True)(x0)
+
+        out = self.p_ims1d2_outl6_dimred(data)
+        out = self.adapt_stage6_b(out)
+        out = self.adapt_stage6_b2_joint_varout_dimred(out)
+        out = out + x0
+        out = F.relu(out)
+        out = self.mflow_conv_g6_pool(out)
+        out = self.mflow_conv_g6_b(out)
+
+        out = self.do(out)
+        out = self.clf_conv(out)
         return out
 
 
