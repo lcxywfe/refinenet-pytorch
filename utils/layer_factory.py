@@ -70,16 +70,16 @@ class CRPBlock(nn.Module):
     def forward(self, x):
         top = x
         for i in range(self.n_stages):
-            top = self.maxpool(top)
             top = getattr(self, '{}_{}'.format(i + 1, 'outvar_dimred'))(top)
+            top = self.maxpool(top)
             x = top + x
         return x
-    
+
 stages_suffixes = {0 : '_conv',
                    1 : '_conv_relu_varout_dimred'}
-    
+
 class RCUBlock(nn.Module):
-    
+
     def __init__(self, in_planes, out_planes, n_blocks, n_stages):
         super(RCUBlock, self).__init__()
         for i in range(n_blocks):
@@ -91,7 +91,7 @@ class RCUBlock(nn.Module):
         self.stride = 1
         self.n_blocks = n_blocks
         self.n_stages = n_stages
-    
+
     def forward(self, x):
         for i in range(self.n_blocks):
             residual = x
